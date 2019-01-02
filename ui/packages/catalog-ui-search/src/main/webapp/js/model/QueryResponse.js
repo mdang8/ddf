@@ -214,11 +214,6 @@ module.exports = Backbone.AssociatedModel.extend({
 
         this.addQueuedResults(resp.results);
 
-        if (this.get('queuedResults').fullCollection.length !== 0) {
-            // merges the remaining queued results not from the cache
-            this.mergeQueue(true, false);
-        }
-
         return {
             queuedResults: [],
             results: [],
@@ -240,7 +235,7 @@ module.exports = Backbone.AssociatedModel.extend({
             return (Date.now() - this.lastMerge) < properties.getAutoMergeTime();
         }
     },
-    mergeQueue: function (userTriggered, includeQueuedCache = true) {
+    mergeQueue: function (userTriggered) {
         if (userTriggered === true || this.allowAutoMerge()) {
             this.lastMerge = Date.now();
 
@@ -253,13 +248,9 @@ module.exports = Backbone.AssociatedModel.extend({
             var metacardIdToSourcesIndex = this.createIndexOfMetacardToSources(resultsIncludingDuplicates);
 
             var interimCollection = new QueryResultCollection(this.get('results').fullCollection.models);
-            const queuedResults = this.get('queuedResults').fullCollection.models;
-            const resultsToAdd = includeQueuedCache
-                ? queuedResults
-                : queuedResults.filter(result => result.get('src') !== 'cache');
-            interimCollection.add(resultsToAdd, {
-                merge: true
-            });
+            var combinedResults = interimCollection.fullCollection.models.concat(this.get('queuedResults').fullCollection.models);
+            
+            interimCollection.fullCollection.reset(combinedResults);
             interimCollection.fullCollection.comparator = this.get('results').fullCollection.comparator;
             interimCollection.fullCollection.sort();
             var maxResults = user.get('user').get('preferences').get('resultCount');
