@@ -218,7 +218,6 @@ module.exports = Backbone.AssociatedModel.extend({
             queuedResults: [],
             results: [],
             status: resp.status,
-            merged: this.get('merged') === false ? false : resp.results.length === 0
         };
     },
     // we have to do a reset because adding is so slow that it will cause a partial merge to initiate
@@ -247,10 +246,23 @@ module.exports = Backbone.AssociatedModel.extend({
                 }));
             var metacardIdToSourcesIndex = this.createIndexOfMetacardToSources(resultsIncludingDuplicates);
 
+            var includeQueuedCache = true;
+            if (this.get('results').fullCollection.models.length !== 0 && this.get('queuedResults').fullCollection.models.length !== 0) {
+                var cachedResults = this.get('results').fullCollection.models
+                    .filter(result => result.get('src') === 'cache');
+                var cachedQueuedResults = this.get('queuedResults').fullCollection.models
+                    .filter(result => result.get('src') === 'cache');
+                // include the queued results from the cache as long as there is not an extra amount
+                includeQueuedCache = cachedResults.length >= cachedQueuedResults.length;
+            }
+
             var interimCollection = new QueryResultCollection(this.get('results').fullCollection.models);
-            var combinedResults = interimCollection.fullCollection.models.concat(this.get('queuedResults').fullCollection.models);
-            
-            interimCollection.fullCollection.reset(combinedResults);
+            var resultsToAdd = includeQueuedCache
+                ? this.get('queuedResults').fullCollection.models
+                : this.get('queuedResults').fullCollection.models.filter(result => result.get('src') !== 'cache');
+            interimCollection.fullCollection.add(resultsToAdd, {
+                merge: true
+            });
             interimCollection.fullCollection.comparator = this.get('results').fullCollection.comparator;
             interimCollection.fullCollection.sort();
             var maxResults = user.get('user').get('preferences').get('resultCount');
