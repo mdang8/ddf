@@ -68,6 +68,14 @@ function handleResultFormFields(result, selectedResultTemplate) {
     }
 }
 
+function countResultsFromCache(results) {
+    let totalCount = results.reduce((count, result) => {
+        let increment = (result.get('src') === 'cache') ? 1 : 0;
+        return count + increment;
+    }, 0);
+    return totalCount;
+}
+
 module.exports = Backbone.AssociatedModel.extend({
     defaults: {
         'queryId': undefined,
@@ -248,12 +256,10 @@ module.exports = Backbone.AssociatedModel.extend({
 
             var includeQueuedCache = true;
             if (this.get('results').fullCollection.models.length !== 0 && this.get('queuedResults').fullCollection.models.length !== 0) {
-                var cachedResults = this.get('results').fullCollection.models
-                    .filter(result => result.get('src') === 'cache');
-                var cachedQueuedResults = this.get('queuedResults').fullCollection.models
-                    .filter(result => result.get('src') === 'cache');
+                var numberOfCachedResults = countResultsFromCache(this.get('results').fullCollection.models)
+                var numberOfCachedQueuedResults = countResultsFromCache(this.get('queuedResults').fullCollection.models);
                 // include the queued results from the cache as long as there is not an extra amount
-                includeQueuedCache = cachedResults.length >= cachedQueuedResults.length;
+                includeQueuedCache = numberOfCachedResults >= numberOfCachedQueuedResults;
             }
 
             var interimCollection = new QueryResultCollection(this.get('results').fullCollection.models);
