@@ -68,14 +68,6 @@ function handleResultFormFields(result, selectedResultTemplate) {
     }
 }
 
-function countResultsFromCache(results) {
-    let totalCount = results.reduce((count, result) => {
-        let increment = (result.get('src') === 'cache') ? 1 : 0;
-        return count + increment;
-    }, 0);
-    return totalCount;
-}
-
 module.exports = Backbone.AssociatedModel.extend({
     defaults: {
         'queryId': undefined,
@@ -245,28 +237,19 @@ module.exports = Backbone.AssociatedModel.extend({
     mergeQueue: function (userTriggered) {
         if (userTriggered === true || this.allowAutoMerge()) {
             this.lastMerge = Date.now();
+            this.set('merged', true);
 
-            var resultsIncludingDuplicates = this.get('results').fullCollection.map(function (m) {
-                    return m.pick('id', 'src');
-                })
-                .concat(this.get('queuedResults').fullCollection.map(function (m) {
-                    return m.pick('id', 'src');
-                }));
-            var metacardIdToSourcesIndex = this.createIndexOfMetacardToSources(resultsIncludingDuplicates);
-
-            var includeQueuedCache = true;
-            if (this.get('results').fullCollection.models.length !== 0 && this.get('queuedResults').fullCollection.models.length !== 0) {
-                var numberOfCachedResults = countResultsFromCache(this.get('results').fullCollection.models)
-                var numberOfCachedQueuedResults = countResultsFromCache(this.get('queuedResults').fullCollection.models);
-                // include the queued results from the cache as long as there is not an extra amount
-                includeQueuedCache = numberOfCachedResults >= numberOfCachedQueuedResults;
-            }
+            var extractResultProperties = (result) => ({
+                'id': result.id,
+                'src': result.get('metacard').get('properties').get('source-id'),
+                'isCache': result.get('src') === 'cache',
+            });
+            var resultsIncludingDuplicates = this.get('results').fullCollection.map(extractResultProperties)
+                .concat(this.get('queuedResults').fullCollection.map(extractResultProperties));
+            //var metacardIdToSourcesIndex = this.createIndexOfMetacardToSources(resultsIncludingDuplicates);
 
             var interimCollection = new QueryResultCollection(this.get('results').fullCollection.models);
-            var resultsToAdd = includeQueuedCache
-                ? this.get('queuedResults').fullCollection.models
-                : this.get('queuedResults').fullCollection.models.filter(result => result.get('src') !== 'cache');
-            interimCollection.fullCollection.add(resultsToAdd, {
+            interimCollection.fullCollection.add(this.get('queuedResults').fullCollection.models, {
                 merge: true
             });
             interimCollection.fullCollection.comparator = this.get('results').fullCollection.comparator;
@@ -274,11 +257,11 @@ module.exports = Backbone.AssociatedModel.extend({
             var maxResults = user.get('user').get('preferences').get('resultCount');
             this.get('results').fullCollection.reset(interimCollection.fullCollection.slice(0, maxResults));
 
+            let updatedSourcesIndex = this.createIndexOfMetacardToSources(this.get('results').fullCollection.map(extractResultProperties));
             this.updateResultCountsBySource(
-                this.createIndexOfSourceToResultCount(metacardIdToSourcesIndex, this.get('results').fullCollection)
+                this.createIndexOfSourceToResultCount(updatedSourcesIndex, this.get('results').fullCollection)
             );
 
-            this.set('merged', true);
             this.get('queuedResults').fullCollection.reset();
             this.updateStatus();
         }
@@ -305,6 +288,9 @@ module.exports = Backbone.AssociatedModel.extend({
         return models.reduce(function (index, metacard) {
             index[metacard.id] = index[metacard.id] || [];
             index[metacard.id].push(metacard.src);
+            if (metacard.isCache) {
+                index[metacard.id].push('cache');
+            }
             return index;
         }, {});
     },

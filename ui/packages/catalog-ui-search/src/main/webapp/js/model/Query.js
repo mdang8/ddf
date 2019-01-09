@@ -109,6 +109,7 @@ define([
             },
             initialize: function () {
                 this.currentIndexForSource = {};
+                this.hitsForSource = {};
 
                 _.bindAll.apply(_, [this].concat(_.functions(this))); // underscore bindAll does not take array arg
                 this.set('id', this.getId());
@@ -307,11 +308,27 @@ define([
                 }));
             },
             hasNextServerPage: function () {
+                this.get('result').get('status').toJSON()
+                    .forEach(src => this.hitsForSource[src.id] = this.hitsForSource[src.id] || 0);
+                var totalHits = Object.keys(this.hitsForSource).reduce((count, src) => {
+                    let increment = (src !== 'cache') ? this.hitsForSource[src] : 0;
+                    return count += increment;
+                }, 0);
                 var pageSize = user.get('user').get('preferences').get('resultCount');
                 return Boolean(this.get('result').get('status').find(function (status) {
-                    var startingIndex = this.getStartIndexForSource(status.id);
-                    var total = status.get('hits');
-                    return (total - startingIndex) >= pageSize;
+                    if (status.id === 'cache') {
+                        // checks each source to determine if at the end of the results page
+                        let atEndOfResults = Object.keys(this.currentIndexForSource).reduce((end, src) => {
+                            let isSrcAtEnd = this.hitsForSource[src] - this.currentIndexForSource[src] <= pageSize;
+                            return isSrcAtEnd && end;
+                        }, true);
+
+                        return !atEndOfResults && totalHits !== 0;
+                    } else {
+                        var startingIndex = this.getStartIndexForSource(status.id);
+                        var total = status.get('hits');
+                        return (total - startingIndex) >= pageSize;
+                    }
                 }.bind(this)));
             },
             getPreviousServerPage: function () {
