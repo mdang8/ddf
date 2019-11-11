@@ -102,6 +102,27 @@ module.exports = function OpenlayersMap(
   listenToResize()
   setupTooltip(map)
   const drawingTools = setupDrawingTools(map)
+  const labelVectorLayer = setupLabelLayer(map)
+
+  /*
+   * Sets up a new Vector Layer for holding labels with the declutter property.
+   * Declutter is used for making sure the label texts don't overlap on each
+   * other.
+   */
+  function setupLabelLayer(map) {
+    const vectorSource = new Openlayers.source.Vector({
+      features: [],
+    })
+    const vectorLayer = new Openlayers.layer.Vector({
+      source: vectorSource,
+      zIndex: 1,
+      declutter: true,
+    })
+
+    map.addLayer(vectorLayer)
+
+    return vectorLayer
+  }
 
   function setupTooltip(map) {
     map.on('pointermove', e => {
@@ -465,7 +486,6 @@ module.exports = function OpenlayersMap(
           }),
         })
       )
-
       const vectorSource = new Openlayers.source.Vector({
         features: [feature],
       })
@@ -478,6 +498,41 @@ module.exports = function OpenlayersMap(
       map.addLayer(vectorLayer)
 
       return vectorLayer
+    },
+    /*
+     * Draws a label on the map by adding to the features in the label Vector
+     * Layer.
+     */
+    addLabel(point, options) {
+      const pointObject = convertPointCoordinate(point)
+      const feature = new Openlayers.Feature({
+        geometry: new Openlayers.geom.Point(pointObject),
+        name: options.text,
+        isLabel: true,
+      })
+      feature.setId(options.id)
+
+      feature.setStyle(
+        new Openlayers.style.Style({
+          text: new Openlayers.style.Text({
+            text: options.text,
+            overflow: true,
+          }),
+        })
+      )
+
+      const labelVectorLayerFeatures = labelVectorLayer
+        .getSource()
+        .getFeatures()
+      // creates a new source with the new feature appended to the current list
+      // of features
+      const newVectorSource = new Openlayers.source.Vector({
+        features: [...labelVectorLayerFeatures, feature],
+      })
+      // updates the vector layer containing the labels with the new source
+      labelVectorLayer.setSource(newVectorSource)
+
+      return labelVectorLayer
     },
     /*
           Adds a polyline utilizing the passed in line and options.
@@ -586,61 +641,78 @@ module.exports = function OpenlayersMap(
           this.updateGeometry(innerGeometry, options)
         })
       } else {
-        const feature = geometry.getSource().getFeatures()[0]
-        const geometryInstance = feature.getGeometry()
-        if (geometryInstance.constructor === Openlayers.geom.Point) {
-          let x = 39,
-            y = 40
-          if (options.size) {
-            x = options.size.x
-            y = options.size.y
-          }
-          geometry.setZIndex(options.isSelected ? 2 : 1)
+        const features = geometry.getSource().getFeatures()
+        features.forEach(feature =>
+          this.setGeometryStyle(geometry, options, feature)
+        )
+      }
+    },
+    setGeometryStyle(geometry, options, feature) {
+      const geometryInstance = feature.getGeometry()
+      if (geometryInstance.constructor === Openlayers.geom.Point) {
+        let x = 39,
+          y = 40
+        if (options.size) {
+          x = options.size.x
+          y = options.size.y
+        }
+        geometry.setZIndex(options.isSelected ? 2 : 1)
+        if (!feature.getProperties().isLabel) {
           feature.setStyle(
             new Openlayers.style.Style({
-              image: new Openlayers.style.Circle({
-                radius: 5,
-                fill: new Openlayers.style.Fill({ color: options.color }),
-                stroke: new Openlayers.style.Stroke({
-                  color: options.color,
-                  width: 1,
+              image: new Openlayers.style.Icon({
+                img: DrawingUtility.getPin({
+                  fillColor: options.color,
+                  strokeColor: options.isSelected ? 'black' : 'white',
+                  icon: options.icon,
                 }),
+                imgSize: [x, y],
+                anchor: [x / 2, 0],
+                anchorOrigin: 'bottom-left',
+                anchorXUnits: 'pixels',
+                anchorYUnits: 'pixels',
               }),
-              text: this.createTextStyle(feature, 10),
             })
           )
-        } else if (
-          geometryInstance.constructor === Openlayers.geom.LineString
-        ) {
-          const styles = [
+        } else {
+          feature.setStyle(
             new Openlayers.style.Style({
-              stroke: new Openlayers.style.Stroke({
-                color: options.isSelected ? 'black' : 'white',
-                width: 8,
-              }),
-            }),
-            new Openlayers.style.Style({
-              stroke: new Openlayers.style.Stroke({
-                color: options.color || defaultColor,
-                width: 4,
-              }),
-            }),
-          ]
-          feature.setStyle(styles)
+              text: this.createTextStyle(
+                feature,
+                map.getView().getResolution()
+              ),
+            })
+          )
         }
+      } else if (geometryInstance.constructor === Openlayers.geom.LineString) {
+        const styles = [
+          new Openlayers.style.Style({
+            stroke: new Openlayers.style.Stroke({
+              color: options.isSelected ? 'black' : 'white',
+              width: 8,
+            }),
+          }),
+          new Openlayers.style.Style({
+            stroke: new Openlayers.style.Stroke({
+              color: options.color || defaultColor,
+              width: 4,
+            }),
+          }),
+        ]
+        feature.setStyle(styles)
       }
     },
     createTextStyle(feature, resolution) {
-      var offsetX = parseInt(0, 10)
-      var offsetY = parseInt(15, 10)
-      var placement = 'point'
-      var maxAngle = 45
-      var overflow = true
-      var rotation = 0
-      var font = 'normal 12px arial'
-      var fillColor = '#aa3300'
-      var outlineColor = '#ffffff'
-      var outlineWidth = parseInt(3, 10)
+      const offsetX = parseInt(20, 10)
+      const offsetY = parseInt(-15, 10)
+      const placement = 'point'
+      const maxAngle = 45
+      const overflow = true
+      const rotation = 0
+      const font = 'normal 12px arial'
+      const fillColor = '#000000'
+      const outlineColor = '#ffffff'
+      const outlineWidth = parseInt(3, 10)
 
       return new Openlayers.style.Text({
         font: font,
@@ -656,12 +728,14 @@ module.exports = function OpenlayersMap(
         maxAngle: maxAngle,
         overflow: overflow,
         rotation: rotation,
+        textAlign: 'left',
+        padding: [5, 5, 5, 5],
       })
     },
     getText(feature, resolution) {
-      var type = 'shorten'
-      var maxResolution = 20
-      var text = feature.get('name')
+      const type = 'shorten'
+      const maxResolution = 1200
+      let text = feature.get('name')
 
       if (resolution > maxResolution) {
         text = ''
@@ -670,8 +744,9 @@ module.exports = function OpenlayersMap(
       } else if (type == 'shorten') {
         text = this.trunc(text, 20)
       } else if (
-        type == 'wrap' &&
-        (!dom.placement || dom.placement.value != 'line')
+        type ==
+        'wrap' /*&&
+        (!dom.placement || dom.placement.value != 'line')*/
       ) {
         text = this.stringDivider(text, 16, '\n')
       }
@@ -680,20 +755,22 @@ module.exports = function OpenlayersMap(
     },
     stringDivider(str, width, spaceReplacer) {
       if (str.length > width) {
-        var p = width
+        let p = width
         while (p > 0 && (str[p] != ' ' && str[p] != '-')) {
           p--
         }
         if (p > 0) {
-          var left
+          let left
           if (str.substring(p, p + 1) == '-') {
             left = str.substring(0, p + 1)
           } else {
             left = str.substring(0, p)
           }
-          var right = str.substring(p + 1)
+          let right = str.substring(p + 1)
           return (
-            left + spaceReplacer + stringDivider(right, width, spaceReplacer)
+            left +
+            spaceReplacer +
+            this.stringDivider(right, width, spaceReplacer)
           )
         }
       }
@@ -769,6 +846,7 @@ module.exports = function OpenlayersMap(
 
       let vectorLayer = new Openlayers.layer.Vector({
         source: vectorSource,
+        declutter: true,
       })
 
       map.addLayer(vectorLayer)

@@ -172,6 +172,9 @@ const properties = {
   isMetacardPreviewEnabled() {
     return !this.isMetacardPreviewDisabled
   },
+  isCustomTextNotationEnabled() {
+    return this.isCustomTextNotationEnabled
+  },
 }
 
 module.exports = properties
